@@ -3,7 +3,119 @@ import { NextResponse } from 'next/server'
 
 export async function POST() {
   try {
-    // Products
+    // Create tables using raw SQL (Prisma schema -> raw DDL)
+    // This avoids needing prisma migrate at runtime
+    
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Product" (
+        "id" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "order" INTEGER NOT NULL DEFAULT 0,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "Product_pkey" PRIMARY KEY ("id"),
+        CONSTRAINT "Product_name_key" UNIQUE ("name")
+      );
+    `)
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Customer" (
+        "id" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "contact" TEXT,
+        "phone" TEXT,
+        "address" TEXT,
+        "password" TEXT NOT NULL DEFAULT '123456',
+        "note" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "Customer_pkey" PRIMARY KEY ("id"),
+        CONSTRAINT "Customer_name_key" UNIQUE ("name")
+      );
+    `)
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "ProductModel" (
+        "id" TEXT NOT NULL,
+        "productId" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "spec" TEXT,
+        "price" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "unit" TEXT NOT NULL DEFAULT '颗',
+        "order" INTEGER NOT NULL DEFAULT 0,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "ProductModel_pkey" PRIMARY KEY ("id"),
+        CONSTRAINT "ProductModel_productId_name_key" UNIQUE ("productId", "name")
+      );
+    `)
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Order" (
+        "id" TEXT NOT NULL,
+        "customerId" TEXT NOT NULL,
+        "orderDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "status" TEXT NOT NULL DEFAULT 'pending',
+        "paymentReceived" BOOLEAN NOT NULL DEFAULT false,
+        "invoiceIssued" BOOLEAN NOT NULL DEFAULT false,
+        "totalAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "note" TEXT,
+        "customerNote" TEXT,
+        "createdBy" TEXT NOT NULL DEFAULT 'customer',
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "Order_pkey" PRIMARY KEY ("id")
+      );
+    `)
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "OrderItem" (
+        "id" TEXT NOT NULL,
+        "orderId" TEXT NOT NULL,
+        "modelId" TEXT NOT NULL,
+        "quantity" INTEGER NOT NULL DEFAULT 1,
+        "price" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "note" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "OrderItem_pkey" PRIMARY KEY ("id")
+      );
+    `)
+
+    // Add foreign keys
+    await prisma.$executeRawUnsafe(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'ProductModel_productId_fkey') THEN
+          ALTER TABLE "ProductModel" ADD CONSTRAINT "ProductModel_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$;
+    `)
+
+    await prisma.$executeRawUnsafe(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'Order_customerId_fkey') THEN
+          ALTER TABLE "Order" ADD CONSTRAINT "Order_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+        END IF;
+      END $$;
+    `)
+
+    await prisma.$executeRawUnsafe(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'OrderItem_orderId_fkey') THEN
+          ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$;
+    `)
+
+    await prisma.$executeRawUnsafe(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'OrderItem_modelId_fkey') THEN
+          ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_modelId_fkey" FOREIGN KEY ("modelId") REFERENCES "ProductModel"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+        END IF;
+      END $$;
+    `)
+
+    // Now seed data
     const p1 = await prisma.product.upsert({ where: { name: '每舒达I' }, update: {}, create: { name: '每舒达I', order: 1 } })
     const p2 = await prisma.product.upsert({ where: { name: '每舒达II' }, update: {}, create: { name: '每舒达II', order: 2 } })
     const p3 = await prisma.product.upsert({ where: { name: '每舒达易植' }, update: {}, create: { name: '每舒达易植', order: 3 } })
@@ -25,29 +137,31 @@ export async function POST() {
       { name: 'MAF600115RC', spec: 'Φ6.0×11.5' }, { name: 'MAF600130RC', spec: 'Φ6.0×13' },
       { name: 'MAF600160RC', spec: 'Φ6.0×15' },
     ]
+
     const p2Models = [
-      { name: 'POF3508', spec: 'Φ3.75×8.5' }, { name: 'POF3510', spec: 'Φ3.75×10' },
-      { name: 'POF3511', spec: 'Φ3.75×11.5' }, { name: 'POF3513', spec: 'Φ3.75×13' },
-      { name: 'POF4007', spec: 'Φ4.2×7' }, { name: 'POF4008', spec: 'Φ4.2×8.5' },
-      { name: 'POF4010', spec: 'Φ4.2×10' }, { name: 'POF4011', spec: 'Φ4.2×11.5' },
-      { name: 'POF4013', spec: 'Φ4.2×13' }, { name: 'POF4507', spec: 'Φ4.55×7' },
-      { name: 'POF4508', spec: 'Φ4.55×8.5' }, { name: 'POF4510', spec: 'Φ4.55×10' },
-      { name: 'POF4511', spec: 'Φ4.55×11.5' }, { name: 'POF4513', spec: 'Φ4.55×13' },
-      { name: 'POF5007', spec: 'Φ5.05×7' }, { name: 'POF5008', spec: 'Φ5.05×8.5' },
-      { name: 'POF5010', spec: 'Φ5.05×10' }, { name: 'POF5011', spec: 'Φ5.05×11.5' },
-      { name: 'POF5013', spec: 'Φ5.05×13' },
+      { name: 'POF3508', spec: 'Φ3.75×8.5' }, { name: 'POF3510', spec: 'Φ3.75×10.0' },
+      { name: 'POF3511', spec: 'Φ3.75×11.5' }, { name: 'POF3513', spec: 'Φ3.75×13.0' },
+      { name: 'POF4007', spec: 'Φ4.2×7.0' }, { name: 'POF4008', spec: 'Φ4.2×8.5' },
+      { name: 'POF4010', spec: 'Φ4.2×10.0' }, { name: 'POF4011', spec: 'Φ4.2×11.5' },
+      { name: 'POF4013', spec: 'Φ4.2×13.0' }, { name: 'POF4507', spec: 'Φ4.55×7.0' },
+      { name: 'POF4508', spec: 'Φ4.55×8.5' }, { name: 'POF4510', spec: 'Φ4.55×10.0' },
+      { name: 'POF4511', spec: 'Φ4.55×11.5' }, { name: 'POF4513', spec: 'Φ4.55×13.0' },
+      { name: 'POF5007', spec: 'Φ5.05×7.0' }, { name: 'POF5008', spec: 'Φ5.05×8.5' },
+      { name: 'POF5010', spec: 'Φ5.05×10.0' }, { name: 'POF5011', spec: 'Φ5.05×11.5' },
+      { name: 'POF5013', spec: 'Φ5.05×13.0' },
     ]
+
     const p3Models = [
       { name: 'AC3709N', spec: 'Φ3.7×8.5' }, { name: 'AC3710N', spec: 'Φ3.7×10' },
       { name: 'AC3711N', spec: 'Φ3.7×11.5' }, { name: 'AC3713N', spec: 'Φ3.7×13' },
-      { name: 'AC4207', spec: 'Φ4.2×7' }, { name: 'AC4209', spec: 'Φ4.2×8.5' },
-      { name: 'AC4210', spec: 'Φ4.2×10' }, { name: 'AC4211', spec: 'Φ4.2×11.5' },
-      { name: 'AC4213', spec: 'Φ4.2×13' }, { name: 'AC4507', spec: 'Φ4.5×7' },
-      { name: 'AC4509', spec: 'Φ4.5×8.5' }, { name: 'AC4510', spec: 'Φ4.5×10' },
-      { name: 'AC4511', spec: 'Φ4.5×11.5' }, { name: 'AC4513', spec: 'Φ4.5×13' },
-      { name: 'AC5007', spec: 'Φ5.0×7' }, { name: 'AC5009', spec: 'Φ5.0×8.5' },
-      { name: 'AC5010', spec: 'Φ5.0×10' }, { name: 'AC5011', spec: 'Φ5.0×11.5' },
-      { name: 'AC5013', spec: 'Φ5.0×13' },
+      { name: 'AC4207', spec: 'Φ4.2×7.0' }, { name: 'AC4209', spec: 'Φ4.2×8.5' },
+      { name: 'AC4210', spec: 'Φ4.2×10.0' }, { name: 'AC4211', spec: 'Φ4.2×11.5' },
+      { name: 'AC4213', spec: 'Φ4.2×13.0' }, { name: 'AC4507', spec: 'Φ4.5×7.0' },
+      { name: 'AC4509', spec: 'Φ4.5×8.5' }, { name: 'AC4510', spec: 'Φ4.5×10.0' },
+      { name: 'AC4511', spec: 'Φ4.5×11.5' }, { name: 'AC4513', spec: 'Φ4.5×13.0' },
+      { name: 'AC5007', spec: 'Φ5.0×7.0' }, { name: 'AC5009', spec: 'Φ5.0×8.5' },
+      { name: 'AC5010', spec: 'Φ5.0×10.0' }, { name: 'AC5011', spec: 'Φ5.0×11.5' },
+      { name: 'AC5013', spec: 'Φ5.0×13.0' },
     ]
 
     let count = 0
@@ -94,6 +208,7 @@ export async function POST() {
 
     return NextResponse.json({ success: true, message: `初始化完成：${count}条数据` })
   } catch (error: any) {
+    console.error('Seed error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
